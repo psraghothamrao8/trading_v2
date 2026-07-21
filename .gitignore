@@ -1,0 +1,46 @@
+# Secrets — §0.4. Never commit.
+.env
+*.pem
+*.key
+.secrets/
+
+# Data & journals — regenerable, large, and contain account activity.
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.parquet
+*.feather
+
+# Logs
+logs/
+*.log
+
+# Backtest output
+backtest_output/
+*.equity.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Test / tooling
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

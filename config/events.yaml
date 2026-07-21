@@ -1,0 +1,92 @@
+# =============================================================================
+# events.yaml — blocked event dates, MAINTAINED BY THE STRATEGY OWNER.
+#
+# The risk kernel (§3) reads this file and:
+#   * rejects NEW entries on any blocked date, and
+#   * rejects any signal that would carry a position OVERNIGHT into one.
+#
+# The overnight engine (§6.4) additionally checks `next session not in
+# events.yaml` before its 15:20 entry.
+#
+# The system NEVER edits this file. Adding a date is a human decision.
+# Dates are ISO `YYYY-MM-DD` in Asia/Kolkata. Past dates are kept for
+# backtest fidelity — the kernel filters by date, not by file length.
+# =============================================================================
+
+meta:
+  as_of: "2026-07-22"
+  maintained_by: "strategy owner"
+
+# -----------------------------------------------------------------------------
+# Categories exist so a future rule can block selectively (e.g. block overnight
+# index positions on RBI MPC but still allow intraday pairs). Today every
+# category in `blocking_categories` blocks everything.
+# -----------------------------------------------------------------------------
+blocking_categories:
+  - rbi_mpc
+  - union_budget
+  - election_result
+  - us_fed
+  - other
+
+# -----------------------------------------------------------------------------
+# RBI Monetary Policy Committee decision days.
+# Source: rbi.org.in press releases -> "MPC meeting schedule".
+# -----------------------------------------------------------------------------
+rbi_mpc:
+  - date: "2026-02-06"
+    note: "RBI MPC decision"
+  - date: "2026-04-08"
+    note: "RBI MPC decision"
+  - date: "2026-06-05"
+    note: "RBI MPC decision"
+  - date: "2026-08-06"
+    note: "RBI MPC decision (verify against RBI calendar)"
+  - date: "2026-10-01"
+    note: "RBI MPC decision (verify against RBI calendar)"
+  - date: "2026-12-04"
+    note: "RBI MPC decision (verify against RBI calendar)"
+
+# -----------------------------------------------------------------------------
+# Union Budget. Presented 1 Feb; the market has traded a full session on
+# Budget Saturdays before, so the date is listed regardless of weekday.
+# -----------------------------------------------------------------------------
+union_budget:
+  - date: "2026-02-01"
+    note: "Union Budget 2026-27"
+  - date: "2027-02-01"
+    note: "Union Budget 2027-28 (provisional)"
+
+# -----------------------------------------------------------------------------
+# Election counting / result days — national and major state.
+# -----------------------------------------------------------------------------
+election_result: []
+
+# -----------------------------------------------------------------------------
+# US FOMC decision days. The decision lands ~23:30 IST, so the BLOCKED session
+# is the NEXT Indian trading day. List the Indian session to block, not the
+# US date.
+# -----------------------------------------------------------------------------
+us_fed:
+  - date: "2026-01-29"
+    note: "IST session after FOMC"
+  - date: "2026-03-19"
+    note: "IST session after FOMC"
+  - date: "2026-04-30"
+    note: "IST session after FOMC"
+  - date: "2026-06-18"
+    note: "IST session after FOMC"
+  - date: "2026-07-30"
+    note: "IST session after FOMC"
+  - date: "2026-09-17"
+    note: "IST session after FOMC"
+  - date: "2026-11-05"
+    note: "IST session after FOMC"
+  - date: "2026-12-17"
+    note: "IST session after FOMC"
+
+# -----------------------------------------------------------------------------
+# Anything else the owner wants blocked: a big IPO listing, a known index
+# rebalance day, a personal unavailability window.
+# -----------------------------------------------------------------------------
+other: []

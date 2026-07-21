@@ -1,0 +1,82 @@
+# =============================================================================
+# holidays.yaml — NSE trading holidays and Muhurat sessions.
+#
+# Read by core/calendar.py. NOT hardcoded in Python (§8.3 principle: exchange
+# schedules change and the owner maintains them).
+#
+# Source of truth: NSE "Trading Holidays" circular, published annually, plus
+# the live `/api/holiday-master?type=trading` endpoint which
+# `scripts/refresh_holidays.py` can diff against this file.
+#
+# `settlement_only` days (e.g. clearing holidays) are NOT listed here — only
+# days on which the equity segment does not trade.
+# =============================================================================
+
+meta:
+  as_of: "2026-07-22"
+  verified_against_nse: false
+  note: >
+    Run `python scripts/refresh_holidays.py --check` after Phase 2 to diff this
+    file against NSE's holiday-master endpoint. Until `verified_against_nse`
+    is true, calendar.py logs a WARNING once per process so a stale list can
+    never silently corrupt a backtest.
+
+# Muhurat Trading: a special ~1 hour evening session on Diwali. The market is
+# otherwise closed that day. Engines are disabled for Muhurat by default —
+# it is a ceremonial session with abnormal liquidity.
+muhurat:
+  trade_engines: false
+  sessions:
+    - date: "2025-10-21"
+      start: "13:45"
+      end: "14:45"
+    - date: "2026-11-08"
+      start: "18:15"
+      end: "19:15"
+      provisional: true
+
+holidays:
+  2024:
+    - {date: "2024-01-22", name: "Special holiday"}
+    - {date: "2024-01-26", name: "Republic Day"}
+    - {date: "2024-03-08", name: "Mahashivratri"}
+    - {date: "2024-03-25", name: "Holi"}
+    - {date: "2024-03-29", name: "Good Friday"}
+    - {date: "2024-04-11", name: "Id-Ul-Fitr"}
+    - {date: "2024-04-17", name: "Shri Ram Navmi"}
+    - {date: "2024-05-01", name: "Maharashtra Day"}
+    - {date: "2024-05-20", name: "General Elections (Mumbai)"}
+    - {date: "2024-06-17", name: "Bakri Id"}
+    - {date: "2024-07-17", name: "Moharram"}
+    - {date: "2024-08-15", name: "Independence Day"}
+    - {date: "2024-10-02", name: "Mahatma Gandhi Jayanti"}
+    - {date: "2024-11-01", name: "Diwali Laxmi Pujan"}
+    - {date: "2024-11-15", name: "Gurunanak Jayanti"}
+    - {date: "2024-12-25", name: "Christmas"}
+  2025:
+    - {date: "2025-02-26", name: "Mahashivratri"}
+    - {date: "2025-03-14", name: "Holi"}
+    - {date: "2025-03-31", name: "Id-Ul-Fitr"}
+    - {date: "2025-04-10", name: "Shri Mahavir Jayanti"}
+    - {date: "2025-04-14", name: "Dr. Baba Saheb Ambedkar Jayanti"}
+    - {date: "2025-04-18", name: "Good Friday"}
+    - {date: "2025-05-01", name: "Maharashtra Day"}
+    - {date: "2025-08-15", name: "Independence Day"}
+    - {date: "2025-08-27", name: "Ganesh Chaturthi"}
+    - {date: "2025-10-02", name: "Mahatma Gandhi Jayanti / Dussehra"}
+    - {date: "2025-10-21", name: "Diwali Laxmi Pujan (Muhurat session only)"}
+    - {date: "2025-10-22", name: "Balipratipada"}
+    - {date: "2025-11-05", name: "Prakash Gurpurb Sri Guru Nanak Dev"}
+    - {date: "2025-12-25", name: "Christmas"}
+  2026:
+    # PROVISIONAL until the NSE 2026 circular is diffed in. Treat with care.
+    - {date: "2026-01-26", name: "Republic Day", provisional: true}
+    - {date: "2026-02-15", name: "Mahashivratri", provisional: true}
+    - {date: "2026-03-04", name: "Holi", provisional: true}
+    - {date: "2026-03-21", name: "Id-Ul-Fitr", provisional: true}
+    - {date: "2026-04-03", name: "Good Friday", provisional: true}
+    - {date: "2026-05-01", name: "Maharashtra Day", provisional: true}
+    - {date: "2026-08-15", name: "Independence Day", provisional: true}
+    - {date: "2026-10-02", name: "Mahatma Gandhi Jayanti", provisional: true}
+    - {date: "2026-11-09", name: "Diwali Balipratipada", provisional: true}
+    - {date: "2026-12-25", name: "Christmas", provisional: true}

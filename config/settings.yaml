@@ -1,0 +1,503 @@
+# =============================================================================
+# settings.yaml — every tunable number in the system lives here.
+# Implements §3 (risk), §4 (costs/gates), §7 (regime + schedule), §8 (India).
+#
+# RULE: if a number appears in a .py file, it is a bug. Put it here.
+# RULE: anything the government or an exchange can change carries an `as_of`.
+# =============================================================================
+
+meta:
+  spec_version: "v2"
+  config_as_of: "2026-07-22"
+
+# -----------------------------------------------------------------------------
+# §0.1  Execution mode. `live` ALSO requires an interactive y/N at startup.
+# -----------------------------------------------------------------------------
+execution:
+  mode: paper                 # paper | live
+  paper_starting_capital: 800000
+  # Paper fills are simulated locally at the reference price plus the slippage
+  # model in `costs.slippage`. No broker order is ever sent in paper mode.
+  paper_fill_latency_ms: 250
+
+# -----------------------------------------------------------------------------
+# §3  RISK KERNEL
+# -----------------------------------------------------------------------------
+risk:
+  capital: 800000                          # INR
+  risk_per_trade_pct: 0.5                  # qty = floor((capital*0.005)/|entry-stop|)
+  daily_loss_limit_pct: 1.5                # breach -> flatten intraday, block new
+  weekly_loss_limit_pct: 3.0               # breach -> block new until Monday
+  max_new_trades_per_day_per_engine: 3
+  max_concurrent_positions_total: 8
+
+  # §3 per-engine capital caps, % of `capital`.
+  # surveillance & special_situations are alert-only -> 0.
+  per_engine_capital_cap_pct:
+    filings: 25
+    sympathy: 10
+    pairs: 25
+    overnight: 25
+    pead: 25
+    panic_reversion: 15
+    wheel: 40                              # margin
+    preopen: 10
+    flows: 15
+    surveillance: 0
+    special_situations: 0
+
+  # §3 India-specific vetoes
+  vetoes:
+    fno_ban_list: true                     # MWPL >= 95% -> reject derivatives
+    surveillance_asm_gsm: true             # reject ALL new entries
+    circuit_band_proximity_pct: 1.0        # within 1% of band -> reject entries
+    blocked_event_days: true               # events.yaml -> no entries, no holds
+    no_new_intraday_entries_after: "14:45"
+    mis_force_flat_at: "15:10"             # broker auto-square ~15:20; never rely on it
+    physical_settlement_guard:
+      enabled: true
+      itm_buffer_pct: 2.0                  # short stock option within 2% of spot
+      close_by_sessions_before_expiry: 2   # expiry minus 2 sessions
+    stt_trap_guard:
+      enabled: true
+      exit_long_itm_options_by: "15:00"    # on expiry day
+
+  # Alert-only engines may never emit a tradable Signal.
+  alert_only_engines: [surveillance, special_situations]
+
+# -----------------------------------------------------------------------------
+# §4  COST MODEL — Zerodha charge structure.
+# Rates change; each block carries `as_of`. Validated against Zerodha's public
+# brokerage calculator in tests/test_costs.py.
+# -----------------------------------------------------------------------------
+costs:
+  as_of: "2025-01-01"
+  source: "https://zerodha.com/charges/"
+
+  brokerage:
+    equity_delivery: {type: flat, value: 0.0}
+    equity_intraday: {type: min_of, pct: 0.03, flat: 20.0}
+    equity_futures:  {type: min_of, pct: 0.03, flat: 20.0}
+    equity_options:  {type: flat, value: 20.0}
+    currency_futures: {type: min_of, pct: 0.03, flat: 20.0}
+    currency_options: {type: flat, value: 20.0}
+    commodity_futures: {type: min_of, pct: 0.03, flat: 20.0}
+    commodity_options: {type: flat, value: 20.0}
+
+  # STT / CTT, as a fraction of the applicable value. `side` says which legs pay.
+  stt:
+    as_of: "2024-10-01"
+    equity_delivery:  {rate: 0.001,    side: both,  basis: turnover}
+    equity_intraday:  {rate: 0.00025,  side: sell,  basis: turnover}
+    equity_futures:   {rate: 0.0002,   side: sell,  basis: turnover}
+    equity_options:   {rate: 0.001,    side: sell,  basis: premium}
+    # Exercised/assigned long ITM options pay STT on INTRINSIC value at this
+    # higher rate. This is the §3 "STT trap".
+    options_exercise:  {rate: 0.00125, side: buy,   basis: intrinsic}
+
+  exchange_transaction_charges:
+    as_of: "2024-10-01"
+    equity_delivery: 0.0000297
+    equity_intraday: 0.0000297
+    equity_futures:  0.0000173
+    equity_options:  0.0003503     # on premium
+
+  sebi_charges:
+    as_of: "2023-04-01"
+    rate: 0.000001                 # 10 per crore, all segments
+
+  stamp_duty:
+    as_of: "2020-07-01"
+    equity_delivery: 0.00015       # buy side only
+    equity_intraday: 0.00003       # buy side only
+    equity_futures:  0.00002       # buy side only
+    equity_options:  0.00003       # buy side only
+
+  gst:
+    as_of: "2017-07-01"
+    rate: 0.18                     # on (brokerage + exchange txn + sebi)
+
+  dp_charges:
+    as_of: "2024-01-01"
+    per_scrip_per_day_sell: 15.34  # equity delivery sells only, incl. GST
+
+  # §4 slippage. Applied per side, on top of the reference price.
+  slippage:
+    liquid_equity_pct: 0.03
+    options_pct: 0.05
+    minimum_ticks: 1
+    tick_size_equity: 0.05
+    tick_size_options: 0.05
+
+# -----------------------------------------------------------------------------
+# §4  BACKTESTER — walk-forward windows and promotion gates.
+# -----------------------------------------------------------------------------
+backtest:
+  windows:
+    tune:     {start: "2019-01-01", end: "2022-12-31"}
+    validate: {start: "2023-01-01", end: "2024-12-31"}
+    test:     {start: "2025-01-01", end: null}     # null = present
+  # §4: the final test window is consumed exactly once. The runner records each
+  # consumption in the journal and prints a WARNING on any re-run.
+  test_window_single_use: true
+
+  promotion_gates:
+    profit_factor_min: 1.3
+    min_trades_default: 150
+    min_trades_event_engines: 40
+    event_engines: [filings, sympathy, pead, special_situations, flows, surveillance]
+    max_drawdown_pct_of_engine_capital: 12.0
+    require_net_expectancy_positive: true
+
+# -----------------------------------------------------------------------------
+# §7  REGIME ROUTER
+# -----------------------------------------------------------------------------
+regime:
+  classify_at: "10:00"
+  panic:
+    vix_intraday_rise_pct: 8.0
+    index_intraday_drop_pct: -1.5
+  trend:
+    min_abs_gap_pct: 0.4
+    vwap_side_fraction_min: 0.80          # of the 09:15-10:00 window
+    advance_decline_ratio_min: 2.0        # or <= 1/2.0 for a down-trend
+  # Enablement map — which engines may open NEW positions in each regime.
+  # `alerts_always` run in every regime regardless.
+  enablement:
+    TREND:  [filings, sympathy, preopen, overnight]
+    CHOP:   [pairs, wheel_management]
+    PANIC:  [panic_reversion]
+    NA:     []
+  alerts_always: [filings, surveillance]
+  panic_disables_premium_selling: true
+  expiry_day_size_multiplier: 0.5
+
+# -----------------------------------------------------------------------------
+# §7  SCHEDULER (APScheduler). All times IST. Jobs are idempotent.
+# -----------------------------------------------------------------------------
+scheduler:
+  timezone: "Asia/Kolkata"
+  misfire_grace_time_sec: 300
+  coalesce: true
+  jobs:
+    auth_check:            {at: "08:30"}
+    preopen_context:       {at: "08:45"}
+    preopen_snapshot_1:    {at: "09:06:30"}
+    preopen_snapshot_2:    {at: "09:07:45"}
+    preopen_entry_window:  {start: "09:15", end: "09:20"}
+    announcements_poll:    {every_seconds: 30, start: "08:00", end: "15:35"}
+    regime_classify:       {at: "10:00"}
+    entry_cutoff:          {at: "14:45"}
+    force_flat:            {at: "15:10"}
+    overnight_check:       {at: "15:20"}
+    digest:                {at: "15:45"}
+    nightly_downloads:     {at: "20:30"}
+    pairs_refresh_reminder: {day_of_week: sun, at: "10:00"}
+
+# -----------------------------------------------------------------------------
+# §8.3  SESSION STRUCTURE, EXPIRY, LOT SIZES
+# NOT hardcoded anywhere in Python. Verify against Kite/NSE docs; keep `as_of`.
+# -----------------------------------------------------------------------------
+market:
+  timezone: "Asia/Kolkata"
+  session:
+    preopen_start: "09:00"
+    preopen_order_entry_end: "09:07:59"
+    preopen_matching_start: "09:08"
+    preopen_matching_end: "09:12"
+    continuous_start: "09:15"
+    continuous_end: "15:30"
+    closing_auction_start: "15:40"
+    closing_auction_end: "16:00"
+
+  expiry:
+    as_of: "2026-07-22"
+    verified: false                # set true once confirmed from NSE/Kite in Phase 2
+    # SEBI/exchanges have changed expiry weekdays repeatedly. Never hardcode.
+    weekly:
+      NIFTY:      {weekday: tuesday}
+      BANKNIFTY:  {weekday: tuesday}   # monthly-only since Nov 2024; see notes
+      FINNIFTY:   {weekday: tuesday}
+    monthly:
+      # Last <weekday> of the expiry month for stock and index monthlies.
+      stock_fno:  {weekday: tuesday, which: last}
+      index:      {weekday: tuesday, which: last}
+    notes: >
+      As of the last manual check the NSE weekly index expiry is Tuesday and
+      BANKNIFTY/FINNIFTY weeklies were discontinued. This block MUST be
+      re-verified in Phase 2 against live NSE/Kite data before any F&O engine
+      is promoted. `verified: false` blocks wheel.py from live promotion.
+
+  lot_sizes:
+    as_of: "2026-07-22"
+    verified: false
+    NIFTY: 75
+    BANKNIFTY: 35
+    FINNIFTY: 65
+
+  price_bands:
+    # §8.4 — stocks carry 2/5/10/20% bands. F&O stocks have no band but a
+    # dynamic price freeze applies. Per-symbol status comes from datafeed.
+    default_pct: 20
+    index_circuit_breakers_pct: [10, 15, 20]
+
+  gift_nifty:
+    enabled: true
+    # §8.3 — used as the overnight gap proxy. If unavailable: degrade
+    # gracefully, log loudly, and skip the dependent rules.
+    url: "https://www.nseix.com/api/marketdata"
+    gap_threshold_exit_pct: -1.0     # §6.4: <= -1% -> exit in pre-open
+
+# -----------------------------------------------------------------------------
+# §8.2  NSE CLIENT. Endpoint URLs live here because NSE changes them.
+# -----------------------------------------------------------------------------
+nse:
+  base_url: "https://www.nseindia.com"
+  warmup_url: "https://www.nseindia.com"
+  headers:
+    User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    Accept: "application/json, text/plain, */*"
+    Accept-Language: "en-US,en;q=0.9"
+    Referer: "https://www.nseindia.com/"
+  min_seconds_between_calls: 2.0          # per endpoint
+  announcements_poll_seconds: 30          # the one exception to the 2s cap
+  timeout_seconds: 15
+  max_retries: 4
+  backoff_base_seconds: 2.0
+  consecutive_failures_before_alert: 5    # then fail LOUDLY on Telegram
+  cookie_ttl_seconds: 900
+
+  endpoints:
+    announcements:   "/api/corporate-announcements?index=equities"
+    preopen:         "/api/market-data-pre-open?key=NIFTY"
+    ban_list:        "/api/fno-ban-list"
+    asm_list:        "/api/reportASM"
+    gsm_list:        "/api/reportGSM"
+    bulk_deals:      "/api/historical/bulk-deals"
+    block_deals:     "/api/historical/block-deals"
+    fii_dii:         "/api/fiidiiTradeReact"
+    fii_derivatives: "/api/fiiParticipantOI"
+    india_vix:       "/api/allIndices"
+    equity_quote:    "/api/quote-equity?symbol={symbol}"
+    holidays:        "/api/holiday-master?type=trading"
+
+# -----------------------------------------------------------------------------
+# §1  LLM — core/llm.py
+# -----------------------------------------------------------------------------
+llm:
+  provider: anthropic
+  model: "claude-sonnet-5"
+  max_tokens: 1500
+  temperature: 0.0
+  retries: 3
+  backoff_base_seconds: 2.0
+  cache_in_sqlite: true                   # keyed by content hash; classify once
+  prompt_dir: "config/prompts"
+  # §6.1 NOTE: classification slower than this -> alert anyway, skip auto-trade.
+  classify_latency_budget_seconds: 20
+
+# -----------------------------------------------------------------------------
+# ENGINE PARAMETERS. One block per §6.x. Engines read ONLY from here.
+# `enabled` gates the engine entirely; `auto_trade` gates order generation
+# (false = alert-only, which is where every engine starts until PROMOTED).
+# -----------------------------------------------------------------------------
+engines:
+
+  filings:                                 # §6.1
+    enabled: true
+    auto_trade: false
+    poll_seconds: 30
+    poll_window: {start: "08:00", end: "15:35"}
+    pdf_max_pages: 4
+    universe: NIFTY200
+    min_confidence: 0.8
+    trade_window: {start: "09:20", end: "14:30"}
+    max_gap_since_filing_pct: 5.0
+    max_filing_age_minutes: 10
+    atr_period: 14
+    atr_timeframe: "5minute"
+    stop_atr_mult: 1.5
+    book_fraction_at_1r: 0.5
+    trail: vwap
+    force_flat_at: "15:10"
+    swing_hold: false
+    swing_hold_max_sessions: 5
+
+  sympathy:                                # §6.2
+    enabled: true
+    auto_trade: false
+    max_related_names: 3
+    min_confidence: 0.7
+    universe: NIFTY500
+    min_avg_daily_turnover_cr: 25
+    max_move_fraction_of_primary: 0.3333
+    max_trades_per_filing: 1
+    max_trades_per_day: 2
+
+  pairs:                                   # §6.3
+    enabled: true
+    auto_trade: false
+    universe: NIFTY50
+    cointegration:
+      lookback_days: 252
+      pvalue_max: 0.05
+      refresh: monthly
+    zscore:
+      timeframe: "5minute"
+      rolling_days: 20
+      entry_abs: 2.0
+      exit_abs: 0.25
+      stop_abs: 3.5
+    max_concurrent_pairs: 2
+    force_flat_eod: true
+    skip_if_material_filing_today: true
+
+  overnight:                               # §6.4
+    enabled: true
+    auto_trade: false
+    entry_at: "15:20"
+    exit_at: "09:16"
+    instrument: "NIFTY_FUT"
+    lots: 1
+    require_close_above_dma: 200
+    max_today_move_pct: -1.5               # skip if today <= -1.5%
+    gift_nifty_exit_threshold_pct: -1.0
+    adverse_gap_sizing_pct: 2.0            # 2% adverse gap ~= daily loss limit
+    only_overnight_index_position: true
+
+  preopen:                                 # §6.5
+    enabled: true
+    auto_trade: false
+    universe: NIFTY50
+    snapshots_at: ["09:06:30", "09:07:45"]
+    min_abs_gap_pct: 1.0
+    imbalance_ratio_long_min: 3.0
+    imbalance_ratio_short_max: 0.3333
+    entry_window: {start: "09:15", end: "09:20"}
+    require_continuation: true
+    stop_atr_mult: 0.5
+    atr_timeframe: "5minute"
+    book_fraction_at_1r: 0.5
+    flat_by: "10:30"
+    max_trades_per_day: 2
+    alert_first_paper_weeks: 2
+
+  pead:                                    # §6.6
+    enabled: true
+    auto_trade: false
+    universe: NIFTY500
+    min_gap_pct: 3.0
+    min_volume_multiple: 2.0
+    volume_avg_days: 20
+    min_tone_score: 7
+    entry: {type: pullback, ema_period: 20, timeframe: "day", within_sessions: 5}
+    stop: below_pre_earnings_close
+    exit: {atr_trail_mult: 3.0, atr_period: 14, atr_timeframe: "day", time_exit_days: 30}
+    max_concurrent: 4
+
+  panic_reversion:                         # §6.7
+    enabled: true
+    auto_trade: false
+    trigger_a_index_drop_pct: -3.0
+    trigger_b_stock_drop_pct: -6.0
+    trigger_b_universe: NIFTY100
+    require_no_negative_filing: true       # MANDATORY — do not remove
+    entry_window: {start: "09:30", end: "10:30"}
+    entry_rule: reclaim_first_15min_high
+    stop: below_session_low
+    book_fraction_at_1r: 0.5
+    trail: {type: ema, period: 10, timeframe: "15minute"}
+    max_concurrent: 2
+    regimes: [PANIC]
+
+  wheel:                                   # §6.8
+    enabled: true
+    auto_trade: false
+    require_telegram_confirmation: true    # even in paper
+    vix_percentile_lookback_days: 252
+    min_vix_percentile: 50
+    target_delta: 0.25
+    dte_range: [30, 45]
+    lots: 1
+    buy_back_at_credit_fraction: 0.5
+    roll_if_breached_and_dte_gt: 10
+    accept_assignment_requires_confirmation: true
+    covered_call_delta: 0.25
+    covered_call_frequency: monthly
+
+  flows:                                   # §6.9
+    enabled: true
+    auto_trade: false
+    percentile_lookback_years: 3
+    long_signal_percentile_max: 10
+    veto_signal_percentile_min: 90
+    entry: next_open
+    stop_pct: -2.0
+    exit: {percentile_above: 40, profit_pct: 4.0, max_sessions: 20}
+    max_positions: 1
+    halve_premium_selling_at_high_percentile: true
+
+  surveillance:                            # §6.10
+    enabled: true
+    auto_trade: false                      # ALERT-ONLY, structurally
+    alert_only: true
+    diff_at: "20:30"
+
+  special_situations:                      # §6.11
+    enabled: true
+    auto_trade: false                      # ALERT-ONLY, structurally
+    alert_only: true
+    scan_at: "20:30"
+    keywords: [buyback, "open offer", delisting, "index inclusion", "index exclusion", tender]
+
+# -----------------------------------------------------------------------------
+# ALERTS / TELEGRAM
+# -----------------------------------------------------------------------------
+alerts:
+  telegram:
+    enabled: true
+    parse_mode: "Markdown"
+    allowed_commands: ["/kill", "/status", "/confirm", "/reject"]
+    # Only this chat id may issue /kill. Value comes from .env.
+    rate_limit_per_minute: 20
+  digest_at: "15:45"
+  send_on: [material_filing, order, fill, rejection, error, regime_change, kill]
+
+# -----------------------------------------------------------------------------
+# STORAGE / LOGGING
+# -----------------------------------------------------------------------------
+storage:
+  data_dir: "data"
+  parquet_dir: "data/parquet"
+  journal_db: "data/journal.sqlite"
+  llm_cache_db: "data/llm_cache.sqlite"
+  instruments_cache: "data/instruments.parquet"
+
+logging:
+  level: INFO
+  dir: "logs"
+  filename: "trading.log"
+  max_bytes: 10485760
+  backup_count: 10
+  format: "%(asctime)s %(levelname)-8s %(name)-22s %(message)s"
+
+# -----------------------------------------------------------------------------
+# HISTORICAL DOWNLOAD (§5 phase 2) — Kite API limits.
+# -----------------------------------------------------------------------------
+datafeed:
+  kite:
+    # Kite caps the date range per historical request by interval. Verify in
+    # Phase 2 and record here with an as_of.
+    as_of: "2026-07-22"
+    verified: false
+    max_days_per_request:
+      minute: 60
+      "3minute": 100
+      "5minute": 100
+      "15minute": 200
+      "60minute": 400
+      day: 2000
+    requests_per_second: 3
+    sleep_between_requests_sec: 0.4
+  daily_history_start: "2015-01-01"
+  intraday_history_start: "2023-01-01"     # extended as far back as Kite allows

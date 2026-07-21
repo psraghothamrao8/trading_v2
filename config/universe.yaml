@@ -1,0 +1,292 @@
+# =============================================================================
+# universe.yaml — tradable universes, sector groups for pairs, wheel whitelist.
+#
+# MAINTAINED BY THE STRATEGY OWNER. The system reads this file; it never
+# rewrites it. `scripts/refresh_universe.py` can PRINT a proposed diff against
+# the live NSE index constituent lists, but applying it is a human decision.
+#
+# `as_of` matters: index constituents change at every semi-annual rebalance,
+# and a backtest run against a stale list has survivorship bias.
+# =============================================================================
+
+meta:
+  as_of: "2026-07-22"
+  source: "NSE index constituent files (manually reviewed)"
+  note: >
+    NIFTY100 = NIFTY50 + nifty_next_50. NIFTY200 = NIFTY100 + nifty_midcap_100.
+    NIFTY500 is resolved at runtime from the instruments cache when
+    `nifty500_from_instruments: true`, because maintaining 500 tickers by hand
+    is error-prone. Set it false and populate `nifty500_explicit` to pin it.
+
+nifty500_from_instruments: true
+nifty500_explicit: []
+
+# -----------------------------------------------------------------------------
+# NIFTY 50
+# -----------------------------------------------------------------------------
+nifty50:
+  - ADANIENT
+  - ADANIPORTS
+  - APOLLOHOSP
+  - ASIANPAINT
+  - AXISBANK
+  - BAJAJ-AUTO
+  - BAJFINANCE
+  - BAJAJFINSV
+  - BEL
+  - BHARTIARTL
+  - CIPLA
+  - COALINDIA
+  - DRREDDY
+  - EICHERMOT
+  - ETERNAL
+  - GRASIM
+  - HCLTECH
+  - HDFCBANK
+  - HDFCLIFE
+  - HEROMOTOCO
+  - HINDALCO
+  - HINDUNILVR
+  - ICICIBANK
+  - INDUSINDBK
+  - INFY
+  - ITC
+  - JIOFIN
+  - JSWSTEEL
+  - KOTAKBANK
+  - LT
+  - M&M
+  - MARUTI
+  - NESTLEIND
+  - NTPC
+  - ONGC
+  - POWERGRID
+  - RELIANCE
+  - SBILIFE
+  - SBIN
+  - SHRIRAMFIN
+  - SUNPHARMA
+  - TATACONSUM
+  - TATAMOTORS
+  - TATASTEEL
+  - TCS
+  - TECHM
+  - TITAN
+  - TRENT
+  - ULTRACEMCO
+  - WIPRO
+
+# -----------------------------------------------------------------------------
+# NIFTY NEXT 50 (NIFTY100 = nifty50 + this)
+# -----------------------------------------------------------------------------
+nifty_next_50:
+  - ABB
+  - ADANIENSOL
+  - ADANIGREEN
+  - ADANIPOWER
+  - AMBUJACEM
+  - BAJAJHLDNG
+  - BANKBARODA
+  - BPCL
+  - BRITANNIA
+  - CANBK
+  - CHOLAFIN
+  - DABUR
+  - DIVISLAB
+  - DLF
+  - GAIL
+  - GODREJCP
+  - HAVELLS
+  - HAL
+  - HYUNDAI
+  - ICICIGI
+  - ICICIPRULI
+  - INDHOTEL
+  - INDIGO
+  - IOC
+  - IRFC
+  - JSWENERGY
+  - LICI
+  - LODHA
+  - LTIM
+  - MOTHERSON
+  - NAUKRI
+  - PFC
+  - PIDILITIND
+  - PNB
+  - RECLTD
+  - SHREECEM
+  - SIEMENS
+  - SWIGGY
+  - TATAPOWER
+  - TORNTPHARM
+  - TVSMOTOR
+  - UNITDSPR
+  - VBL
+  - VEDL
+  - ZYDUSLIFE
+
+# -----------------------------------------------------------------------------
+# NIFTY MIDCAP 100 sample (NIFTY200 = nifty100 + this)
+# Trimmed to liquid names actually reachable by the engines; extend as needed.
+# -----------------------------------------------------------------------------
+nifty_midcap_100:
+  - AUBANK
+  - AUROPHARMA
+  - ALKEM
+  - ASHOKLEY
+  - ASTRAL
+  - BALKRISIND
+  - BHARATFORG
+  - BIOCON
+  - BSE
+  - COFORGE
+  - COLPAL
+  - CONCOR
+  - CUMMINSIND
+  - DALBHARAT
+  - DIXON
+  - ESCORTS
+  - EXIDEIND
+  - FEDERALBNK
+  - FORTIS
+  - GMRAIRPORT
+  - GODREJPROP
+  - HDFCAMC
+  - IDFCFIRSTB
+  - INDUSTOWER
+  - IRCTC
+  - JUBLFOOD
+  - KPITTECH
+  - LUPIN
+  - MANKIND
+  - MARICO
+  - MAXHEALTH
+  - MFSL
+  - MPHASIS
+  - MRF
+  - MUTHOOTFIN
+  - NHPC
+  - NMDC
+  - OBEROIRLTY
+  - OFSS
+  - OIL
+  - PAGEIND
+  - PATANJALI
+  - PAYTM
+  - PERSISTENT
+  - PETRONET
+  - PHOENIXLTD
+  - PIIND
+  - POLICYBZR
+  - POLYCAB
+  - PRESTIGE
+  - SAIL
+  - SJVN
+  - SOLARINDS
+  - SRF
+  - SUNDARMFIN
+  - SUPREMEIND
+  - SUZLON
+  - TATACOMM
+  - TATAELXSI
+  - TATATECH
+  - THERMAX
+  - TIINDIA
+  - TORNTPOWER
+  - TRIDENT
+  - UBL
+  - UNIONBANK
+  - UPL
+  - VOLTAS
+  - YESBANK
+  - ZFCVINDIA
+
+# -----------------------------------------------------------------------------
+# §6.3 PAIRS — sector groups, NIFTY-50 only.
+# `refresh_pairs.py` runs Engle-Granger within each group and stores the
+# surviving pairs (p < 0.05) plus their hedge ratios in the journal DB.
+# Only same-sector pairs are ever tested: cross-sector cointegration on a
+# 1-year window is usually spurious.
+# -----------------------------------------------------------------------------
+pair_sectors:
+  banks_private:
+    - HDFCBANK
+    - ICICIBANK
+    - AXISBANK
+    - KOTAKBANK
+    - INDUSINDBK
+  banks_psu_and_nbfc:
+    - SBIN
+    - BAJFINANCE
+    - BAJAJFINSV
+    - SHRIRAMFIN
+    - JIOFIN
+  it:
+    - TCS
+    - INFY
+    - HCLTECH
+    - WIPRO
+    - TECHM
+  auto:
+    - MARUTI
+    - M&M
+    - TATAMOTORS
+    - BAJAJ-AUTO
+    - HEROMOTOCO
+    - EICHERMOT
+  metals:
+    - TATASTEEL
+    - JSWSTEEL
+    - HINDALCO
+    - COALINDIA
+  energy_and_power:
+    - RELIANCE
+    - ONGC
+    - NTPC
+    - POWERGRID
+  fmcg:
+    - HINDUNILVR
+    - ITC
+    - NESTLEIND
+    - TATACONSUM
+  pharma:
+    - SUNPHARMA
+    - CIPLA
+    - DRREDDY
+    - APOLLOHOSP
+
+# -----------------------------------------------------------------------------
+# §6.8 WHEEL — approved names only.
+# Spec says 2-3 liquid large-cap F&O names. These are stocks the owner is
+# genuinely willing to take DELIVERY of, because stock options settle
+# physically (§8.5). Do not add a name here you would not want to own.
+# -----------------------------------------------------------------------------
+wheel_approved:
+  - symbol: RELIANCE
+    max_lots: 1
+    willing_to_own: true
+  - symbol: INFY
+    max_lots: 1
+    willing_to_own: true
+  - symbol: ITC
+    max_lots: 1
+    willing_to_own: true
+
+# -----------------------------------------------------------------------------
+# §6.4 / §6.9 INDEX PROXIES
+# -----------------------------------------------------------------------------
+index_proxies:
+  NIFTY:
+    spot_symbol: "NIFTY 50"
+    futures_root: "NIFTY"
+    etf_proxy: "NIFTYBEES"
+  INDIAVIX:
+    spot_symbol: "INDIA VIX"
+
+# -----------------------------------------------------------------------------
+# Permanent exclusions — never traded by any engine, regardless of signal.
+# -----------------------------------------------------------------------------
+blacklist:
+  symbols: []
+  reason: {}
