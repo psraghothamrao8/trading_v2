@@ -238,6 +238,21 @@ class TestPromotionGates:
         assert engine_capital_for("filings") == pytest.approx(200_000.0)
         assert engine_capital_for("sympathy") == pytest.approx(80_000.0)
 
+    def test_explicit_zero_cap_is_honoured(self):
+        """Alert-only engines really do get no capital."""
+        assert engine_capital_for("surveillance") == pytest.approx(0.0)
+
+    def test_unconfigured_engine_falls_back_to_full_capital(self):
+        """A 0 base would make the drawdown gate unfailable, so it must not be 0."""
+        assert engine_capital_for("not_a_configured_engine") == pytest.approx(800_000.0)
+
+    def test_the_drawdown_gate_can_actually_fail_for_an_unconfigured_engine(self):
+        trades = [trade(200_000, engine="adhoc", day=1), trade(-150_000, engine="adhoc", day=2)]
+        metrics = compute_metrics(trades, "adhoc", "validate", 800_000)
+        verdict = evaluate_gates(metrics, engine_capital_for("adhoc"))
+        dd_gate = next(g for g in verdict.gates if g.name == "max_drawdown")
+        assert not dd_gate.passed
+
 
 # ---------------------------------------------------------------------------
 # Walk-forward windows (§4)

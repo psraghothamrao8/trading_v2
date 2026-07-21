@@ -380,8 +380,24 @@ def evaluate_gates(
 
 
 def engine_capital_for(engine: str, settings: Settings | None = None) -> float:
-    """Capital allocated to an engine, from its §3 per-engine cap."""
+    """Capital allocated to an engine, from its §3 per-engine cap.
+
+    A cap explicitly configured as 0 (``surveillance``, ``special_situations``)
+    means exactly that: no capital. A *missing* cap is different -- it is an
+    engine the risk config has never heard of, and returning 0 there would make
+    the drawdown gate read "<= 0.00 (12% of 0)", which passes for any engine
+    that happens not to draw down. That is a gate that cannot fail, so it falls
+    back to the full capital and says so.
+    """
     settings = settings or get_settings()
     capital = float(settings.require("risk.capital"))
-    cap_pct = float(settings.get(f"risk.per_engine_capital_cap_pct.{engine}", 0))
-    return capital * cap_pct / 100.0
+    caps = settings.get("risk.per_engine_capital_cap_pct", {}) or {}
+    if engine not in caps:
+        log.warning(
+            "No per-engine capital cap configured for %r; using the full capital "
+            "(%.0f) as the drawdown base. Add it to settings.yaml "
+            "`risk.per_engine_capital_cap_pct` so the §4 drawdown gate is meaningful.",
+            engine, capital,
+        )
+        return capital
+    return capital * float(caps[engine]) / 100.0
