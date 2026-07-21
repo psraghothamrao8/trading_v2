@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "required": ["label", "confidence", "reason"],
+  "properties": {
+    "label": {
+      "type": "string",
+      "enum": ["MATERIAL_POSITIVE", "MATERIAL_NEGATIVE", "NOISE"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "reason": {
+      "type": "string"
+    },
+    "est_revenue_impact_pct": {
+      "type": ["number", "null"]
+    }
+  }
+}

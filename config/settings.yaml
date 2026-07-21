@@ -237,9 +237,17 @@ market:
   lot_sizes:
     as_of: "2026-07-22"
     verified: false
+    # Index
     NIFTY: 75
     BANKNIFTY: 35
     FINNIFTY: 65
+    # Stock F&O — every name in universe.yaml `wheel_approved` MUST appear
+    # here, because §6.8 sells options on them and calendar.lot_size() refuses
+    # to guess. NSE revises stock lot sizes at least twice a year; re-verify
+    # these in Phase 2 before any wheel order goes live.
+    RELIANCE: 500
+    INFY: 400
+    ITC: 1600
 
   price_bands:
     # §8.4 — stocks carry 2/5/10/20% bands. F&O stocks have no band but a

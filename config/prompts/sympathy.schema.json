@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "required": ["related"],
+  "properties": {
+    "related": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["symbol", "relation", "direction", "confidence"],
+        "properties": {
+          "symbol": {"type": "string"},
+          "relation": {
+            "type": "string",
+            "enum": ["supplier", "customer", "peer", "parent", "subsidiary", "jv_partner"]
+          },
+          "direction": {"type": "string", "enum": ["POSITIVE", "NEGATIVE"]},
+          "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+          "reason": {"type": "string"}
+        }
+      }
+    }
+  }
+}

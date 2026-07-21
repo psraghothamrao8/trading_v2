@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["event_type", "confidence"],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "enum": ["buyback", "open_offer", "delisting", "index_change", "none"]
+    },
+    "offer_price": {"type": ["number", "null"]},
+    "record_date": {"type": ["string", "null"]},
+    "offer_size_shares": {"type": ["number", "null"]},
+    "total_shares": {"type": ["number", "null"]},
+    "reserved_retail_pct": {"type": ["number", "null"]},
+    "open_date": {"type": ["string", "null"]},
+    "close_date": {"type": ["string", "null"]},
+    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+    "summary": {"type": "string"}
+  }
+}

@@ -172,15 +172,20 @@ class Engine(ABC):
         ttl: Any = None,
         entry_type: Any = None,
         reason: str = "",
+        limit_price: float | None = None,
         **meta: Any,
     ) -> Signal:
         """Build a Signal tagged with this engine's name and the current time."""
         from core.types import EntryType, TTL
 
+        entry_type = entry_type or EntryType.MARKET
+        if entry_type is EntryType.LIMIT and limit_price is None:
+            limit_price = reference_price
+
         return Signal(
             symbol=symbol.upper(),
             side=side,
-            entry_type=entry_type or EntryType.MARKET,
+            entry_type=entry_type,
             stop=stop,
             targets=tuple(targets),
             ttl=ttl or TTL.INTRADAY,
@@ -188,6 +193,7 @@ class Engine(ABC):
             engine=self.name,
             meta=meta,
             reference_price=reference_price,
+            limit_price=limit_price,
             created_at=clock.now_ist(),
         )
 
