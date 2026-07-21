@@ -73,7 +73,9 @@ def build_status(
             "net": account.net,
             "error": account.error,
         },
-        "regime": Regime.NA.value,
+        # §7 classifies at 10:00 and journals the decision. Before that (or on
+        # a day the router has not run) the honest answer is NA.
+        "regime": _todays_regime(journal, today),
         "risk": {
             "capital": settings.require("risk.capital"),
             "risk_per_trade_pct": settings.require("risk.risk_per_trade_pct"),
@@ -116,6 +118,15 @@ def build_status(
         },
         "journal_today": journal.counts_for_date(today.isoformat()),
     }
+
+
+def _todays_regime(journal: Journal, today: Any) -> str:
+    """The regime the §7 router recorded today, or NA if it has not run."""
+    rows = journal.query(
+        "SELECT regime FROM regime_log WHERE trade_date=? ORDER BY ts DESC LIMIT 1",
+        (today.isoformat(),),
+    )
+    return rows[0]["regime"] if rows else Regime.NA.value
 
 
 def _yn(value: Any) -> str:
