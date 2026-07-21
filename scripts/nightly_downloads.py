@@ -15,6 +15,12 @@ every failure is journalled and surfaced (§8.2 -- never silently degrade).
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _Path
+
+# Allow `python scripts/<name>.py` as well as `python -m scripts.<name>`.
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+
 import argparse
 import logging
 import sys

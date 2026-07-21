@@ -71,8 +71,14 @@ risk:
 # brokerage calculator in tests/test_costs.py.
 # -----------------------------------------------------------------------------
 costs:
-  as_of: "2025-01-01"
+  as_of: "2026-07-22"
   source: "https://zerodha.com/charges/"
+  # Fetched from the Zerodha charges page on 2026-07-22.
+  # `verified_against_calculator` stays false until a human runs the three
+  # sample trades in tests/test_costs.py through Zerodha's interactive
+  # brokerage calculator and confirms the totals match. §4 requires that
+  # comparison; the calculator is JS-driven and cannot be scraped reliably.
+  verified_against_calculator: false
 
   brokerage:
     equity_delivery: {type: flat, value: 0.0}
@@ -86,39 +92,39 @@ costs:
 
   # STT / CTT, as a fraction of the applicable value. `side` says which legs pay.
   stt:
-    as_of: "2024-10-01"
-    equity_delivery:  {rate: 0.001,    side: both,  basis: turnover}
-    equity_intraday:  {rate: 0.00025,  side: sell,  basis: turnover}
-    equity_futures:   {rate: 0.0002,   side: sell,  basis: turnover}
-    equity_options:   {rate: 0.001,    side: sell,  basis: premium}
-    # Exercised/assigned long ITM options pay STT on INTRINSIC value at this
-    # higher rate. This is the §3 "STT trap".
-    options_exercise:  {rate: 0.00125, side: buy,   basis: intrinsic}
+    as_of: "2026-07-22"
+    equity_delivery:  {rate: 0.001,    side: both,  basis: turnover}   # 0.1% both sides
+    equity_intraday:  {rate: 0.00025,  side: sell,  basis: turnover}   # 0.025% sell
+    equity_futures:   {rate: 0.0005,   side: sell,  basis: turnover}   # 0.05% sell
+    equity_options:   {rate: 0.0015,   side: sell,  basis: premium}    # 0.15% sell, on premium
+    # Exercised/assigned long ITM options pay STT on INTRINSIC value.
+    # This is the §3 "STT trap": far larger than the premium-based rate.
+    options_exercise:  {rate: 0.0015,  side: buy,   basis: intrinsic}
 
   exchange_transaction_charges:
-    as_of: "2024-10-01"
-    equity_delivery: 0.0000297
-    equity_intraday: 0.0000297
-    equity_futures:  0.0000173
-    equity_options:  0.0003503     # on premium
+    as_of: "2026-07-22"
+    equity_delivery: 0.0000307     # 0.00307%
+    equity_intraday: 0.0000307     # 0.00307%
+    equity_futures:  0.0000183     # 0.00183%
+    equity_options:  0.0003553     # 0.03553%, on premium
 
   sebi_charges:
-    as_of: "2023-04-01"
-    rate: 0.000001                 # 10 per crore, all segments
+    as_of: "2026-07-22"
+    rate: 0.000001                 # INR 10 per crore, all segments
 
   stamp_duty:
-    as_of: "2020-07-01"
-    equity_delivery: 0.00015       # buy side only
-    equity_intraday: 0.00003       # buy side only
-    equity_futures:  0.00002       # buy side only
-    equity_options:  0.00003       # buy side only
+    as_of: "2026-07-22"
+    equity_delivery: 0.00015       # 0.015%, buy side only
+    equity_intraday: 0.00003       # 0.003%, buy side only
+    equity_futures:  0.00002       # 0.002%, buy side only
+    equity_options:  0.00003       # 0.003%, buy side only
 
   gst:
-    as_of: "2017-07-01"
-    rate: 0.18                     # on (brokerage + exchange txn + sebi)
+    as_of: "2026-07-22"
+    rate: 0.18                     # 18% on (brokerage + exchange txn + SEBI)
 
   dp_charges:
-    as_of: "2024-01-01"
+    as_of: "2026-07-22"
     per_scrip_per_day_sell: 15.34  # equity delivery sells only, incl. GST
 
   # §4 slippage. Applied per side, on top of the reference price.
