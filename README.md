@@ -26,6 +26,8 @@ Nothing here trades real money until you deliberately make it.
 8. [The go-live checklist](#8-the-go-live-checklist)
 9. [What each engine does](#9-what-each-engine-does)
 10. [Architecture](#10-architecture)
+11. [Choosing your LLM](#11-choosing-your-llm)
+12. [Choosing your data source](#12-choosing-your-data-source)
 
 ---
 
@@ -48,15 +50,20 @@ Copy the environment template and fill it in:
 cp .env.example .env
 ```
 
-| Variable | Where it comes from |
-|---|---|
-| `KITE_API_KEY`, `KITE_API_SECRET` | [developers.kite.trade/apps](https://developers.kite.trade/apps) |
-| `KITE_ACCESS_TOKEN` | written for you by `scripts/morning_auth.py` |
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
-| `TELEGRAM_BOT_TOKEN` | message `@BotFather` → `/newbot` |
-| `TELEGRAM_CHAT_ID` | message your bot once, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` |
+| Variable | Required? | Where it comes from |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | yes | message `@BotFather` → `/newbot` |
+| `TELEGRAM_CHAT_ID` | yes | message your bot once, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` |
+| `KITE_API_KEY`, `KITE_API_SECRET` | only for `source: kite` | [developers.kite.trade/apps](https://developers.kite.trade/apps) |
+| `KITE_ACCESS_TOKEN` | — | written for you by `scripts/morning_auth.py` |
+| `ANTHROPIC_API_KEY` | only for `provider: anthropic` | [console.anthropic.com](https://console.anthropic.com) |
 
 `TELEGRAM_CHAT_ID` is an allowlist — only that chat can issue `/kill`.
+
+**The defaults need no paid account and no API key**: local LLM via Ollama, free
+market data via Yahoo. See [Choosing your LLM](#11-choosing-your-llm) and
+[Choosing your data source](#12-choosing-your-data-source) for what that costs
+you — both have real limits, and both are stated plainly rather than glossed.
 
 Verify the install:
 
@@ -446,6 +453,127 @@ python -m pytest tests/test_costs.py -v   # the cost model + calculator samples
 `tests/test_architecture.py` is not a unit test — it is a guard rail. It fails
 the build if an engine imports the broker, if a secret appears in a tracked
 file, if a stub sneaks in, or if a bare `datetime.now()` appears anywhere.
+
+---
+
+## 11. Choosing your LLM
+
+Three engines use an LLM: §6.1 filings (materiality), §6.2 sympathy (business
+relationships), §6.6 PEAD (management tone). §6.11 uses one to extract corporate
+action economics.
+
+Set the provider in `config/settings.yaml`:
+
+```yaml
+llm:
+  provider: ollama          # or: anthropic
+  model: "granite4.1:3b"
+```
+
+### Local (default) — Ollama
+
+No API key, no cost, nothing leaves your machine. Install from
+[ollama.com/download](https://ollama.com/download), then:
+
+```bash
+ollama pull granite4.1:3b
+```
+
+Verify it's running:
+
+```bash
+ollama list
+```
+
+**Which model.** RAM is the binding constraint, not cleverness:
+
+| Model | Size | Needs | Notes |
+|---|---|---|---|
+| `granite4.1:3b` | 2.1 GB | ~4 GB free | **Default.** IBM tuned it for classification and function-calling, which is exactly this workload |
+| `qwen3.5:2b` | 2.7 GB | ~4 GB free | Faster, weaker on nuance |
+| `qwen3.5:4b` | 3.4 GB | ~6 GB free | Best local quality; tight on an 8 GB machine |
+
+On a 4-core CPU with 8 GB RAM, `granite4.1:3b` is the right pick. Above 16 GB,
+`qwen3.5:4b` is a clear quality step up.
+
+**Two things make a 3B model workable here:**
+
+1. **Schema-constrained decoding.** The task's JSON schema is passed as Ollama's
+   `format`, so the model *cannot* emit invalid JSON. Without it, small models
+   wrap JSON in prose and every classification burns three slow retries.
+2. **KV-cache reuse.** The system prompt is byte-identical on every call and
+   `keep_alive: 30m` holds the model in RAM, so the ~2,400-token prompt is
+   prefilled once per model load rather than once per filing.
+
+**The honest limitation.** CPU inference is slow. §6.1 gives classification a
+20-second budget; past that it alerts but skips the auto-trade. On four cores
+many filings will exceed it, so **filings will often be alert-only**. That is
+fine — nothing auto-trades until you promote it anyway — but do not "fix" it by
+raising `classify_latency_budget_seconds`. That number is a trading rule: a late
+trade on a stale filing is worse than no trade.
+
+### Hosted — Anthropic
+
+```yaml
+llm:
+  provider: anthropic
+  model: "claude-sonnet-5"
+```
+
+Set `ANTHROPIC_API_KEY` in `.env`. Faster, materially better at the nuance in
+§6.2 and §6.6, and comfortably inside the latency budget.
+
+Results are cached per `provider:model`, so switching providers re-classifies
+rather than silently serving a 3B verdict where you expected Sonnet's.
+
+---
+
+## 12. Choosing your data source
+
+```yaml
+datafeed:
+  source: free            # or: kite
+```
+
+| | `free` (Yahoo) | `kite` |
+|---|---|---|
+| Daily history | ✅ complete, back to 2015 | ✅ complete |
+| 5-minute history | ❌ **60 days only** | ✅ multi-year |
+| Live quotes | ⚠️ delayed ~15 min | ✅ real-time websocket |
+| Circuit bands (§3 veto) | ❌ absent | ✅ |
+| Option chain (§6.8) | ❌ absent | ✅ |
+| Order routing | ❌ paper only | ✅ |
+| Cost | free | paid subscription + daily token |
+
+**What free data actually blocks.** Five engines need 5-minute bars across the
+2019–2024 walk-forward windows, and 60 days is nowhere near that:
+
+- ❌ Cannot be backtested on free data: `filings`, `sympathy`, `pairs`,
+  `preopen`, `panic_reversion`
+- ✅ Can be: `overnight`, `pead`, `flows` (plus the two alert-only engines)
+
+**Live paper trading of all eleven still works**, because 5-minute bars are
+built forward from polling rather than pulled from history. So the free path is:
+backtest what you can, paper-trade everything, and add Kite when you want to
+promote a 5-minute engine.
+
+Download daily data with no Kite account at all:
+
+```bash
+python scripts/download_history.py --source free --universe NIFTY200 --interval day
+```
+
+Two behaviours worth knowing:
+
+- Requesting old intraday data **clamps to 60 days and warns loudly** rather
+  than failing — a partial window with a visible warning beats an exception that
+  kills a 200-symbol download.
+- The free source reports **no** circuit-band fields rather than guessing them,
+  so the §3 band veto correctly concludes "no data" instead of inventing a band
+  and blocking real trades.
+
+If Kite is configured but unauthenticated, the session falls back to free data,
+logs a WARNING and journals it. It will not start a blind session.
 
 ---
 

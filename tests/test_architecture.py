@@ -99,6 +99,11 @@ class TestSecretsHygiene:
         for line in example.splitlines():
             if line.startswith("KITE_API_KEY="):
                 assert line.strip() == "KITE_API_KEY=your_kite_api_key"
+            # Every other credential line must be empty or a placeholder.
+            for key in ("ANTHROPIC_API_KEY=", "TELEGRAM_BOT_TOKEN=",
+                        "TELEGRAM_CHAT_ID=", "KITE_ACCESS_TOKEN="):
+                if line.startswith(key):
+                    assert line.strip() == key, f"{key} has a value in .env.example"
 
 
 class TestNoPlaceholders:

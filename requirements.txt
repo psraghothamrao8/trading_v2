@@ -1,5 +1,4 @@
 # §1 TECH STACK. Python 3.11+.
-kiteconnect>=4.2.0
 pandas>=2.0
 numpy>=1.24
 pyarrow>=14.0
@@ -8,9 +7,21 @@ APScheduler>=3.10
 python-telegram-bot>=21.0
 httpx>=0.27
 statsmodels>=0.14
-anthropic>=0.40
 python-dotenv>=1.0
 pypdf>=4.0
+
+# Data sources. Pick one via `datafeed.source` in config/settings.yaml.
+#   kite — full capability; needs the paid Kite Connect subscription
+#   free — Yahoo; complete DAILY history, but intraday stops at 60 days
+kiteconnect>=4.2.0
+yfinance>=0.2.40
+
+# LLM providers. Pick one via `llm.provider` in config/settings.yaml.
+#   ollama    — local, CPU-friendly, no key, nothing leaves the machine.
+#               Needs the Ollama app itself: https://ollama.com/download
+#               (talks over plain HTTP, so no Python package is required)
+#   anthropic — hosted; only needed if you set provider: anthropic
+anthropic>=0.40
 
 # Dev / test
 pytest>=8.0

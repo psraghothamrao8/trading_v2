@@ -41,6 +41,15 @@ class SchemaError(LLMError):
     """The model returned JSON that does not satisfy the task schema."""
 
 
+class LLMSetupError(LLMError):
+    """The provider is misconfigured: no server, no model, no key.
+
+    Distinct from :class:`SchemaError` because it is **permanent**. Retrying a
+    missing model three times just buries the one line telling you to pull it,
+    and on CPU inference each pointless retry costs real seconds.
+    """
+
+
 @dataclass
 class Classification:
     """A validated classification plus the metadata the journal needs."""
@@ -295,6 +304,7 @@ class LLMClient:
     ) -> None:
         settings = get_settings()
         self.config = settings.section("llm")
+        self.provider = str(self.config.get("provider", "anthropic")).lower()
         self.model = str(self.config.require("model"))
         self.max_tokens = int(self.config.get("max_tokens", 1500))
         self.temperature = float(self.config.get("temperature", 0.0))
@@ -306,6 +316,11 @@ class LLMClient:
         self._sleep = sleeper or time.sleep
         self._client: Any = None
 
+        if self.provider not in ("anthropic", "ollama"):
+            raise ConfigError(
+                f"Unknown llm.provider {self.provider!r}; expected 'anthropic' or 'ollama'"
+            )
+
     @property
     def cache(self) -> Optional[LLMCache]:
         if not self.use_cache:
@@ -314,13 +329,25 @@ class LLMClient:
             self._cache = LLMCache()
         return self._cache
 
-    def _call_model(self, system: str, user: str) -> str:
+    # -- providers --------------------------------------------------------
+
+    def _call_model(
+        self, system: str, user: str, schema: dict[str, Any] | None = None
+    ) -> str:
+        """Dispatch to the configured provider. Returns the raw response text."""
         if self._transport is not None:
             return self._transport(system, user, self.max_tokens)
+        if self.provider == "ollama":
+            return self._call_ollama(system, user, schema)
+        return self._call_anthropic(system, user)
 
+    def _call_anthropic(self, system: str, user: str) -> str:
         secrets = get_secrets()
         if not secrets.anthropic_api_key:
-            raise LLMError("ANTHROPIC_API_KEY is not set in .env (§0.4)")
+            raise LLMSetupError(
+                "ANTHROPIC_API_KEY is not set in .env (§0.4). Either add it, or "
+                "set `llm.provider: ollama` in config/settings.yaml to run locally."
+            )
         if self._client is None:
             try:
                 import anthropic
@@ -339,6 +366,72 @@ class LLMClient:
             block.text for block in response.content if getattr(block, "type", "") == "text"
         )
 
+    def _call_ollama(
+        self, system: str, user: str, schema: dict[str, Any] | None = None
+    ) -> str:
+        """Local inference via the Ollama HTTP API. No API key, no network egress.
+
+        Two things make this workable on a CPU-only machine:
+
+        * ``format`` is set to the task's JSON schema. Ollama constrains
+          decoding to that grammar, so a 3B model returns valid JSON instead of
+          prose-wrapped near-JSON. Without it the retry loop burns three slow
+          CPU generations on formatting failures.
+        * ``keep_alive`` holds the model in RAM between calls, and the system
+          prompt is byte-identical every time so llama.cpp reuses its KV cache
+          for the prefix. The ~2.4k-token prompt is therefore prefilled once
+          per model load, not once per filing -- the difference between ~60s
+          and ~10s per classification on four cores.
+        """
+        import httpx
+
+        base_url = str(self.config.get("ollama.base_url", "http://localhost:11434"))
+        timeout = float(self.config.get("ollama.timeout_seconds", 300))
+
+        options: dict[str, Any] = {
+            "temperature": self.temperature,
+            "num_predict": self.max_tokens,
+            "num_ctx": int(self.config.get("ollama.num_ctx", 8192)),
+        }
+        threads = self.config.get("ollama.num_thread", None)
+        if threads:
+            options["num_thread"] = int(threads)
+
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "stream": False,
+            "keep_alive": str(self.config.get("ollama.keep_alive", "30m")),
+            "options": options,
+        }
+        if schema is not None and self.config.get("ollama.structured_output", True):
+            body["format"] = schema
+
+        try:
+            response = httpx.post(f"{base_url}/api/chat", json=body, timeout=timeout)
+        except Exception as exc:
+            raise LLMSetupError(
+                f"Cannot reach Ollama at {base_url}: {exc}. "
+                f"Is `ollama serve` running? Start it, or pull the model with "
+                f"`ollama pull {self.model}`."
+            ) from exc
+
+        if response.status_code == 404:
+            raise LLMSetupError(
+                f"Ollama does not have model {self.model!r}. Run: ollama pull {self.model}"
+            )
+        if response.status_code >= 400:
+            raise LLMError(f"Ollama returned {response.status_code}: {response.text[:300]}")
+
+        payload = response.json()
+        content = (payload.get("message") or {}).get("content", "")
+        if not content:
+            raise LLMError(f"Ollama returned an empty message: {str(payload)[:300]}")
+        return content
+
     def classify(
         self, task: str, payload: dict[str, Any], schema: dict[str, Any] | None = None
     ) -> Classification:
@@ -347,7 +440,10 @@ class LLMClient:
         system = load_prompt(task)
         user = json.dumps(payload, default=str, indent=2)
 
-        content_hash = LLMCache.key(task, self.model, payload)
+        # The provider is part of the cache key: the same filing classified by
+        # a local 3B model and by Sonnet are different answers, and silently
+        # serving one for the other would be a lie about provenance.
+        content_hash = LLMCache.key(task, f"{self.provider}:{self.model}", payload)
         cache = self.cache
         if cache is not None:
             cached = cache.get(content_hash)
@@ -362,9 +458,13 @@ class LLMClient:
         last_error: Optional[Exception] = None
         for attempt in range(1, self.retries + 1):
             try:
-                raw = self._call_model(system, user)
+                raw = self._call_model(system, user, schema)
                 data = extract_json(raw)
                 validate(data, schema)
+            except LLMSetupError:
+                # Permanent: no server, no model, no key. Surface it now --
+                # retrying cannot fix a configuration problem.
+                raise
             except Exception as exc:
                 last_error = exc
                 log.warning("LLM %s attempt %d/%d failed: %s", task, attempt, self.retries, exc)

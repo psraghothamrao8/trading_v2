@@ -90,6 +90,10 @@ class DataFeed:
         self._sleep = sleeper or time.sleep
         self._instruments: Optional[pd.DataFrame] = None
         self._token_cache: dict[str, int] = {}
+        # Instrument tokens are source-specific: a Kite token is meaningless to
+        # the free source and vice versa. Namespacing the cache by source stops
+        # one source resolving a symbol to the other's token.
+        self.source_name = str(getattr(kite, "name", "kite") or "kite")
 
     # -- instruments ------------------------------------------------------
 
@@ -99,7 +103,7 @@ class DataFeed:
         Downloading this on every run is wasteful (it is a multi-MB CSV) and
         pointless -- it changes at most daily.
         """
-        cache = data_path(f"instruments_{exchange.lower()}.parquet")
+        cache = data_path(f"instruments_{self.source_name}_{exchange.lower()}.parquet")
         if not refresh and self._instruments is not None:
             return self._instruments
         if not refresh and cache.exists():
@@ -196,6 +200,28 @@ class DataFeed:
         token = self.instrument_token(symbol, exchange)
         max_days = self.max_days_for(interval)
         pause = float(self.settings.get("datafeed.kite.sleep_between_requests_sec", 0.4))
+
+        # Sources may serve less history than was asked for (free intraday stops
+        # at 60 days). Clamp before planning chunks so we make one useful
+        # request rather than a run of empty ones.
+        limit_days = None
+        if hasattr(self.kite, "max_history_days"):
+            limit_days = self.kite.max_history_days(interval)
+        if limit_days is not None:
+            oldest = clock.today_ist() - _dt.timedelta(days=int(limit_days))
+            if end < oldest:
+                log.warning(
+                    "%s %s: the whole window %s..%s is older than this source's "
+                    "%d-day limit; nothing to fetch.",
+                    symbol, interval, start, end, limit_days,
+                )
+                return _empty_ohlcv()
+            if start < oldest:
+                log.warning(
+                    "%s %s: source serves only %d days of history; clamping start "
+                    "from %s to %s.", symbol, interval, limit_days, start, oldest,
+                )
+                start = oldest
 
         frames: list[pd.DataFrame] = []
         chunks = plan_chunks(start, end, max_days)

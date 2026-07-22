@@ -107,18 +107,39 @@ def main(argv: list[str] | None = None) -> int:
                         help="fetch only what is missing since the last stored candle")
     parser.add_argument("--instruments", action="store_true",
                         help="refresh the instruments cache and exit")
+    parser.add_argument("--source", choices=["kite", "free"],
+                        help="data source; default from settings.yaml datafeed.source")
     args = parser.parse_args(argv)
 
     setup_logging()
 
-    broker = KiteBroker()
-    if not broker.is_authenticated():
-        print("ERROR: not authenticated with Kite (§8.1: tokens expire daily ~07:30 IST).",
-              file=sys.stderr)
-        print("       Run `python scripts/morning_auth.py` first.", file=sys.stderr)
-        return 2
+    source_name = args.source or str(settings.get("datafeed.source", "kite"))
 
-    feed = DataFeed(kite=broker.kite)
+    if source_name == "kite":
+        broker = KiteBroker()
+        if not broker.is_authenticated():
+            print("ERROR: not authenticated with Kite (§8.1: tokens expire daily ~07:30 IST).",
+                  file=sys.stderr)
+            print("       Run `python scripts/morning_auth.py` first,", file=sys.stderr)
+            print("       or use --source free for daily data without Kite.", file=sys.stderr)
+            return 2
+        source = broker.kite
+    else:
+        from core.sources import YFinanceSource
+
+        source = YFinanceSource()
+        caps = source.capabilities()
+        print(f"Source: {caps['source']} — daily history {caps['daily_history']}, "
+              f"intraday capped at {caps['intraday_history_days']} days")
+        if args.interval != "day":
+            print()
+            print("  WARNING: free intraday history stops at 60 days, so the 2019-2024")
+            print("  walk-forward windows cannot be filled. These engines cannot be")
+            print(f"  backtested on free data: {', '.join(caps['not_backtestable'])}.")
+            print("  Live paper trading of all engines still works.")
+            print()
+
+    feed = DataFeed(kite=source)
 
     if args.instruments:
         for exchange in ("NSE", "NFO"):

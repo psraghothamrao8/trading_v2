@@ -299,8 +299,10 @@ nse:
 # §1  LLM — core/llm.py
 # -----------------------------------------------------------------------------
 llm:
-  provider: anthropic
-  model: "claude-sonnet-5"
+  # `ollama` runs locally with no API key and no data leaving the machine.
+  # `anthropic` is the hosted option. Switch by changing provider + model.
+  provider: ollama
+  model: "granite4.1:3b"
   max_tokens: 1500
   temperature: 0.0
   retries: 3
@@ -308,7 +310,32 @@ llm:
   cache_in_sqlite: true                   # keyed by content hash; classify once
   prompt_dir: "config/prompts"
   # §6.1 NOTE: classification slower than this -> alert anyway, skip auto-trade.
+  # This is a TRADING rule, not a performance knob. On CPU-only inference many
+  # classifications will exceed it, and the correct consequence is that filings
+  # stay alert-only. Do not raise it to make local inference "pass".
   classify_latency_budget_seconds: 20
+
+  ollama:
+    base_url: "http://localhost:11434"
+    # First call after a model load pays the full prompt prefill; later calls
+    # reuse the cached KV prefix. keep_alive holds the model in RAM so that
+    # saving is not thrown away between the 30s announcement polls.
+    keep_alive: "30m"
+    timeout_seconds: 300
+    # The filings prompt is ~2.4k tokens; 8k leaves room for a long filing body
+    # without allocating a KV cache this machine cannot hold.
+    num_ctx: 8192
+    num_thread: null                      # null = let Ollama pick
+    # Constrains decoding to the task's JSON schema, so a small model returns
+    # valid JSON instead of prose-wrapped near-JSON.
+    structured_output: true
+
+  # Reference: models that fit a CPU-only box, smallest first. RAM figures are
+  # the model file; add ~1-2 GB for the KV cache at num_ctx 8192.
+  #   granite4.1:3b   2.1 GB  IBM, tuned for classification + function calling
+  #   qwen3.5:2b      2.7 GB  faster, weaker on nuance
+  #   qwen3.5:4b      3.4 GB  best quality here, needs ~6 GB free RAM
+  #   claude-sonnet-5         hosted, set provider: anthropic
 
 # -----------------------------------------------------------------------------
 # ENGINE PARAMETERS. One block per §6.x. Engines read ONLY from here.
@@ -499,6 +526,15 @@ logging:
 # HISTORICAL DOWNLOAD (§5 phase 2) — Kite API limits.
 # -----------------------------------------------------------------------------
 datafeed:
+  # `kite`  — full capability: multi-year 5-minute history, live undelayed
+  #           quotes, circuit bands, option chains, order routing. Needs the
+  #           paid Kite Connect subscription and a daily token (§8.1).
+  # `free`  — Yahoo via yfinance. Complete DAILY history and delayed quotes,
+  #           but intraday history stops at 60 days and there are no circuit
+  #           bands and no option chain. See core/sources.py for exactly which
+  #           engines that makes un-backtestable.
+  source: free
+
   kite:
     # Kite caps the date range per historical request by interval. Verify in
     # Phase 2 and record here with an as_of.

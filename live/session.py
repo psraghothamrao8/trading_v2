@@ -77,7 +77,7 @@ class Session:
         self.cost_model = get_cost_model()
 
         self.market = MarketState()
-        self.feed = feed if feed is not None else DataFeed(journal=self.journal)
+        self.feed = feed if feed is not None else self._build_feed()
         self._nse = nse
 
         self.broker = broker or get_broker(
@@ -99,6 +99,41 @@ class Session:
         self._register_commands()
 
     # -- collaborators ----------------------------------------------------
+
+    def _build_feed(self) -> DataFeed:
+        """Build the datafeed from ``datafeed.source``, degrading loudly.
+
+        A Kite source that cannot authenticate falls back to free data rather
+        than starting a blind session -- but it says so, because free data is
+        delayed and has no circuit bands, and a session running on it is a
+        materially different thing from one running on Kite.
+        """
+        from core.sources import YFinanceSource
+
+        configured = str(self.settings.get("datafeed.source", "kite")).lower()
+        if configured == "free":
+            log.info("datafeed source: free (delayed quotes, no circuit bands)")
+            return DataFeed(kite=YFinanceSource(), journal=self.journal)
+
+        try:
+            from core.broker import KiteBroker
+
+            broker = KiteBroker()
+            if broker.is_authenticated():
+                return DataFeed(kite=broker.kite, journal=self.journal)
+            reason = "not authenticated (§8.1: tokens expire daily ~07:30 IST)"
+        except Exception as exc:
+            reason = str(exc)
+
+        log.warning(
+            "Kite datafeed unavailable (%s); falling back to FREE data. Quotes are "
+            "delayed and there are no circuit bands, so the §3 band veto has "
+            "nothing to check. Run scripts/morning_auth.py to restore Kite.", reason,
+        )
+        self.journal.record_error(
+            "datafeed", f"Kite unavailable, using free data: {reason}", severity="WARNING"
+        )
+        return DataFeed(kite=YFinanceSource(), journal=self.journal)
 
     @property
     def nse(self) -> Any:
