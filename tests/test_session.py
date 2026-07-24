@@ -133,6 +133,33 @@ class TestRouting:
         session.route(exit_sig, session.build_context())
         assert journal.query("SELECT quantity FROM orders")[0]["quantity"] == 40
 
+    def test_routed_entry_alert_carries_stop_target_and_fill_price(self, journal, frozen_clock):
+        """The alert a manual trader acts on must be a complete instruction."""
+        frozen_clock(2026, 7, 22, 10, 0)
+        alerts = NullAlerts()
+        session = make_session(journal, prices={"RELIANCE": 3000.0}, alerts=alerts)
+        session.route(entry_signal(), session.build_context())
+        text = next(m for m in alerts.sent_messages if "ENTRY" in m)
+        assert "2,900.00" in text        # stop
+        assert "3,100.00" in text        # target
+        assert "test" in text            # signal.reason
+
+    def test_routed_exit_alert_omits_stop_and_target(self, journal, frozen_clock):
+        frozen_clock(2026, 7, 22, 15, 0)
+        alerts = NullAlerts()
+        session = make_session(journal, prices={"RELIANCE": 3000.0}, alerts=alerts)
+        session.broker.seed_position(
+            Position("RELIANCE", 40, 2950.0, "filings", Product.MIS,
+                     last_price=3000.0, segment=Segment.EQUITY_INTRADAY)
+        )
+        exit_sig = entry_signal()
+        exit_sig.meta.update({"exit": True, "quantity": 40})
+        object.__setattr__(exit_sig, "side", Side.SELL)
+        session.route(exit_sig, session.build_context())
+        text = next(m for m in alerts.sent_messages if "EXIT" in m)
+        assert "stop" not in text.lower()
+        assert "target" not in text.lower()
+
     def test_missing_price_drops_the_signal_without_an_order(self, journal, frozen_clock):
         frozen_clock(2026, 7, 22, 10, 0)
         session = make_session(journal, prices={})
@@ -154,6 +181,43 @@ class TestRunCycle:
         session.job_regime()
         session.state.decision.enabled_engines = ["filings"]
         assert session.run_cycle() == 1
+
+    def test_auto_trade_off_blocks_new_entries_at_the_session_not_the_engine(
+        self, journal, frozen_clock
+    ):
+        """The one authoritative auto_trade gate lives in run_cycle().
+
+        Engines themselves always emit whatever their own criteria produce
+        (see test_engines_news.py::test_signal_is_produced_even_with_auto_trade_off)
+        so that a backtest can evaluate an unpromoted engine at all. This test
+        is the other half: confirming the live loop still refuses to act on
+        those signals for anything that has not been promoted.
+        """
+        frozen_clock(2026, 7, 22, 10, 30)
+        engine = StubEngine(entries=[entry_signal()], journal=journal)
+        engine.config._data["auto_trade"] = False       # type: ignore[attr-defined]
+        session = make_session(journal, {"filings": engine}, {"RELIANCE": 3000.0})
+        session.job_regime()
+        session.state.decision.enabled_engines = ["filings"]
+        assert session.run_cycle() == 0
+        assert session.broker.positions() == []
+
+    def test_auto_trade_off_still_manages_existing_positions(self, journal, frozen_clock):
+        """A demoted engine's open position must still get exited."""
+        frozen_clock(2026, 7, 22, 15, 0)
+        exit_sig = entry_signal()
+        exit_sig.meta.update({"exit": True, "quantity": 10})
+        object.__setattr__(exit_sig, "side", Side.SELL)
+
+        engine = StubEngine(exits=[exit_sig], journal=journal)
+        engine.config._data["auto_trade"] = False       # type: ignore[attr-defined]
+        session = make_session(journal, {"filings": engine}, {"RELIANCE": 3000.0})
+        session.broker.seed_position(
+            Position("RELIANCE", 10, 3000.0, "filings", Product.MIS,
+                     last_price=3000.0, segment=Segment.EQUITY_INTRADAY)
+        )
+        assert session.run_cycle() == 1
+        assert session.broker.positions() == []
 
     def test_management_runs_before_entries(self, journal, frozen_clock):
         """An exit that frees a slot must not queue behind signal generation."""

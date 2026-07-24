@@ -210,10 +210,17 @@ class TestFilingsTradeGate:
         assert signal.stop > 100.0
         assert signal.ttl is TTL.INTRADAY      # §6.1: NEGATIVE => MIS short
 
-    def test_auto_trade_off_means_alert_only(self, journal, frozen_clock):
+    def test_signal_is_produced_even_with_auto_trade_off(self, journal, frozen_clock):
+        """The engine itself never self-gates on auto_trade.
+
+        Gating here would make an unpromoted engine (auto_trade defaults
+        False) permanently unbacktestable, since backtesting calls this exact
+        method to decide whether to promote it. The one authoritative gate is
+        Session.run_cycle -- see test_session.py::TestRunCycle for that half.
+        """
         now = frozen_clock(2026, 7, 22, 10, 5)
         engine = self._engine(journal, auto_trade=False)
-        assert engine.build_signal(make_filing(timestamp=now), self._ctx(journal, now)) is None
+        assert engine.build_signal(make_filing(timestamp=now), self._ctx(journal, now)) is not None
 
     def test_low_confidence_is_rejected(self, journal, frozen_clock):
         now = frozen_clock(2026, 7, 22, 10, 5)

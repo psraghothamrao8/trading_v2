@@ -158,10 +158,15 @@ class PeadEngine(Engine):
     # -- entries ----------------------------------------------------------
 
     def on_schedule(self, ctx: Context) -> list[Signal]:
-        """Detect new gaps, score tone, then look for the 20-EMA pullback."""
-        if not self.auto_trade:
-            return []
+        """Detect new gaps, score tone, then look for the 20-EMA pullback.
 
+        Always emits Signals regardless of ``auto_trade``: a backtest is how
+        the promotion decision gets made in the first place, and gating signal
+        generation on the very flag the backtest informs would make an
+        unpromoted engine permanently unbacktestable. ``auto_trade`` is
+        enforced once, in ``live.session.Session.run_cycle``, which decides
+        whether a live/paper cycle is even allowed to call this method.
+        """
         min_tone = int(self.config.require("min_tone_score"))
         for candidate in self.detect(ctx):
             tone = self.score_tone(candidate, ctx)
@@ -307,10 +312,19 @@ class PeadEngine(Engine):
         )
 
     def universe(self) -> list[str]:
-        """§6.6 operates on NIFTY-500, resolved from the instruments cache."""
+        """§6.6 operates on NIFTY-500, resolved from the instruments cache.
+
+        Must use whichever source is actually configured (``datafeed.source``):
+        a bare ``DataFeed(journal=...)`` with no source defaults its cache
+        namespace to "kite", which -- with no authenticated Kite session -- can
+        silently read a stale or empty file instead of the real universe.
+        """
         try:
             return super().universe()
         except Exception:
             from core.datafeed import DataFeed
+            from core.sources import get_source
 
-            return DataFeed(journal=self.journal).resolve_nifty500()
+            source_name = str(self.settings.get("datafeed.source", "kite"))
+            feed = DataFeed(kite=get_source(source_name), journal=self.journal)
+            return feed.resolve_nifty500()

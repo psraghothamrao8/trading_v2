@@ -113,10 +113,11 @@ class PairsEngine(Engine):
     # -- entries ----------------------------------------------------------
 
     def on_schedule(self, ctx: Context) -> list[Signal]:
-        """§6.3: enter |z| >= 2, rupee-neutral, max 2 concurrent pairs."""
-        if not self.auto_trade:
-            return []
+        """§6.3: enter |z| >= 2, rupee-neutral, max 2 concurrent pairs.
 
+        Always evaluated regardless of ``auto_trade`` -- see filings.py for
+        why; the one authoritative gate lives in Session.run_cycle.
+        """
         zconfig = self.config.section("zscore")
         entry_threshold = float(zconfig.require("entry_abs"))
         interval = str(zconfig.get("timeframe", "5minute"))

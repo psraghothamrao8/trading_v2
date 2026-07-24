@@ -108,9 +108,11 @@ class FlowsEngine(Engine):
     # -- entries ----------------------------------------------------------
 
     def on_schedule(self, ctx: Context) -> list[Signal]:
-        """§6.9: percentile <= 10 -> swing long the index at the next open."""
-        if not self.auto_trade:
-            return []
+        """§6.9: percentile <= 10 -> swing long the index at the next open.
+
+        Always emits regardless of ``auto_trade`` -- see filings.py for why;
+        the one authoritative gate lives in Session.run_cycle.
+        """
         if ctx.position_for(self.symbol, self.name) is not None:
             return []
         if self.concurrent_positions(ctx) >= int(self.config.require("max_positions")):

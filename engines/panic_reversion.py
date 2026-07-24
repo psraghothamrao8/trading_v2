@@ -129,9 +129,11 @@ class PanicReversionEngine(Engine):
     # -- entries ----------------------------------------------------------
 
     def on_schedule(self, ctx: Context) -> list[Signal]:
-        """§6.7: entry next session 09:30-10:30 on reclaim of the first-15-min high."""
-        if not self.auto_trade:
-            return []
+        """§6.7: entry next session 09:30-10:30 on reclaim of the first-15-min high.
+
+        Always evaluated regardless of ``auto_trade`` -- see filings.py for
+        why; the one authoritative gate lives in Session.run_cycle.
+        """
         if ctx.regime not in self.allowed_regimes and ctx.regime is not Regime.NA:
             return []
 

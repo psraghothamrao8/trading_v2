@@ -254,9 +254,13 @@ class FilingsEngine(Engine):
           * the stock has not already gapped > 5% since the filing
           * classification latency <= the configured budget
           * the filing is younger than 10 minutes
+
+        Always evaluated regardless of ``auto_trade``: a backtest is how the
+        promotion decision gets made, and gating signal generation on the flag
+        the backtest informs would make an unpromoted engine permanently
+        unbacktestable. The one authoritative ``auto_trade`` check lives in
+        ``live.session.Session.run_cycle``.
         """
-        if not self.auto_trade:
-            return None
         if not filing.is_material:
             return None
 

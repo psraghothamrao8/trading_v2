@@ -227,9 +227,17 @@ class Session:
 
         order.broker_order_id = broker_order_id
         self.journal.record_order(order, mode=self.broker.mode, status="FILLED")
+        fill_price = None
+        for f in getattr(self.broker, "fills", [])[-1:]:
+            if f.order_id == order.order_id:
+                fill_price = f.price
         self.alerts.order_placed(
             order.engine, order.symbol, order.side.value, order.quantity,
-            order.price, self.broker.mode,
+            fill_price if fill_price is not None else order.price, self.broker.mode,
+            stop=order.stop if not is_exit else None,
+            targets=tuple(order.meta.get("targets") or ()) if not is_exit else (),
+            reason=order.reason,
+            is_entry=not is_exit,
         )
 
         for fill in getattr(self.broker, "fills", [])[-1:]:
@@ -254,6 +262,15 @@ class Session:
         Management runs first, always. An exit that frees a concurrency slot
         should be able to do so before a new entry competes for it, and a stop
         that needs hitting must not wait behind signal generation.
+
+        ``auto_trade`` is enforced HERE, and only here, before calling
+        ``on_schedule``. Engines themselves never self-gate on it: doing so
+        would make an unpromoted engine (auto_trade defaults False) permanently
+        unable to produce a backtest, since the backtester calls these same
+        methods directly to decide whether to promote it in the first place.
+        ``manage()`` runs unconditionally regardless of auto_trade -- if a
+        promoted engine gets demoted mid-position, whatever it already opened
+        still needs to be managed to a close.
         """
         ctx = self.build_context(now)
         routed = 0
@@ -270,7 +287,7 @@ class Session:
 
         ctx = self.build_context(now)      # refresh: management may have closed
         for name, engine in self.engines.items():
-            if name in ALERT_ONLY or not engine.enabled:
+            if name in ALERT_ONLY or not engine.enabled or not engine.auto_trade:
                 continue
             if self.state.decision and not self.state.decision.may_open(name):
                 continue

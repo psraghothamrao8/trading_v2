@@ -45,9 +45,11 @@ class OvernightEngine(Engine):
     # -- entry ------------------------------------------------------------
 
     def on_schedule(self, ctx: Context) -> list[Signal]:
-        """§6.4 entry at 15:20, subject to the three filters."""
-        if not self.auto_trade:
-            return []
+        """§6.4 entry at 15:20, subject to the three filters.
+
+        Always evaluated regardless of ``auto_trade`` -- see filings.py for
+        why; the one authoritative gate lives in Session.run_cycle.
+        """
         if not self._at_entry_time(ctx):
             return []
         if ctx.position_for(self.symbol, self.name) is not None:
@@ -148,6 +150,15 @@ class OvernightEngine(Engine):
         return round(price * (1 - gap_pct / 100.0), 2)
 
     def _at_entry_time(self, ctx: Context) -> bool:
+        """Wall-clock gate for the live 60s polling loop.
+
+        A backtest has exactly one bar per trading day -- that bar IS the
+        day's single decision point, so there is no wall-clock to check
+        against; the live scheduler is the only context where "has 15:20
+        arrived yet" is a meaningful question.
+        """
+        if ctx.is_backtest:
+            return True
         entry_at = str(self.config.require("entry_at"))
         return clock.within(ctx.now, entry_at, entry_at) or (
             clock.is_after(ctx.now, entry_at)
@@ -157,7 +168,17 @@ class OvernightEngine(Engine):
     # -- exit -------------------------------------------------------------
 
     def manage(self, ctx: Context) -> list[Signal]:
-        """§6.4 exit at 09:16, or earlier in pre-open if GIFT Nifty is <= -1%."""
+        """§6.4 exit at 09:16, or earlier in pre-open if GIFT Nifty is <= -1%.
+
+        In a backtest the exit fires unconditionally once a position exists --
+        same reasoning as ``_at_entry_time``: one bar is one day, so there is
+        no later wall-clock moment within that bar to wait for. NOTE: because
+        the shared backtester fills every order at the FOLLOWING bar's open,
+        this measures a same-day-open-to-next-day-open round trip rather than
+        the precise close(day N)-to-open(day N+1) window the live strategy
+        actually trades. That is a real approximation, not a bug fix away from
+        exact -- flagged here rather than silently presented as exact.
+        """
         position = ctx.position_for(self.symbol, self.name)
         if position is None:
             return []
@@ -174,7 +195,7 @@ class OvernightEngine(Engine):
             return [self._exit(position, price, f"GIFT Nifty {gap:.2f}% <= {threshold}% (§6.4)")]
 
         exit_at = str(self.config.require("exit_at"))
-        if clock.is_after(ctx.now, exit_at) or clock.within(ctx.now, exit_at, exit_at):
+        if ctx.is_backtest or clock.is_after(ctx.now, exit_at) or clock.within(ctx.now, exit_at, exit_at):
             return [self._exit(position, price, f"{exit_at} scheduled exit (§6.4)")]
         return []
 

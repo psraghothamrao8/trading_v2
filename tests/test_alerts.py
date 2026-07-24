@@ -85,6 +85,41 @@ class TestFormattedAlerts:
         text = transport.posts[0][1]["text"]
         assert "over budget" in text
 
+    def test_order_placed_entry_includes_stop_and_target(self):
+        """A manual trader needs the full instruction, not just symbol/side/qty."""
+        alerts, transport = make_alerts()
+        alerts.order_placed("filings", "RELIANCE", "BUY", 40, 3005.50, "paper",
+                            stop=2900.0, targets=(3110.0,), reason="MATERIAL_POSITIVE (0.94)")
+        text = transport.posts[0][1]["text"]
+        assert "ENTRY" in text
+        assert "2,900.00" in text
+        assert "3,110.00" in text
+        assert "MATERIAL_POSITIVE" in text
+
+    def test_order_placed_exit_omits_stop_and_target(self):
+        """An exit alert should not show a stop/target for a position already closing."""
+        alerts, transport = make_alerts()
+        alerts.order_placed("filings", "RELIANCE", "SELL", 20, 3110.0, "paper",
+                            stop=2900.0, targets=(3110.0,), reason="+1R scale-out (50%)",
+                            is_entry=False)
+        text = transport.posts[0][1]["text"]
+        assert "EXIT" in text
+        assert "stop" not in text.lower()
+        assert "target" not in text.lower()
+        assert "+1R scale-out" in text
+
+    def test_order_placed_without_stop_or_targets_omits_those_lines(self):
+        alerts, transport = make_alerts()
+        alerts.order_placed("wheel", "RELIANCE26AUG2800PE", "SELL", 500, 45.0, "paper")
+        text = transport.posts[0][1]["text"]
+        assert "stop" not in text.lower()
+        assert "target" not in text.lower()
+
+    def test_order_placed_market_order_shows_mkt(self):
+        alerts, transport = make_alerts()
+        alerts.order_placed("overnight", "NIFTYBEES", "BUY", 100, None, "paper")
+        assert "MKT" in transport.posts[0][1]["text"]
+
     def test_rejection_alert_carries_the_code(self):
         alerts, transport = make_alerts()
         alerts.rejection("filings", "YESBANK", "ASM_GSM_SURVEILLANCE", "under surveillance")

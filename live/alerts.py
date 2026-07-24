@@ -169,14 +169,42 @@ class Alerts:
         self.send("\n".join(lines))
 
     def order_placed(
-        self, engine: str, symbol: str, side: str, quantity: int, price: float | None, mode: str
+        self,
+        engine: str,
+        symbol: str,
+        side: str,
+        quantity: int,
+        price: float | None,
+        mode: str,
+        *,
+        stop: float | None = None,
+        targets: Sequence[float] = (),
+        reason: str = "",
+        is_entry: bool = True,
     ) -> None:
+        """§0.1 order alert -- the message a manual trader acts on.
+
+        For an entry this is a complete instruction: side, size, entry, stop,
+        target. For an exit, stop/targets are irrelevant (the position is
+        closing); the reason line carries the "why" instead, since a fast
+        manual trader needs to know whether this is a scale-out, a trailing
+        stop, or a force-flat before they act on it.
+        """
         px = f"@ {price:,.2f}" if price is not None else "@ MKT"
         tag = "PAPER" if mode == "paper" else "LIVE"
-        self.send(
-            f"📤 <b>{_e(tag)} ORDER</b> [{_e(engine)}]\n"
-            f"{_e(side)} <code>{_e(symbol)}</code> x{quantity} {px}"
-        )
+        kind = "ENTRY" if is_entry else "EXIT"
+        lines = [
+            f"📤 <b>{_e(tag)} {kind}</b> [{_e(engine)}]",
+            f"{_e(side)} <code>{_e(symbol)}</code> x{quantity} {px}",
+        ]
+        if is_entry:
+            if stop is not None:
+                lines.append(f"stop   {stop:,.2f}")
+            if targets:
+                lines.append(f"target {targets[0]:,.2f}")
+        if reason:
+            lines.append(f"<i>{_e(reason[:200])}</i>")
+        self.send("\n".join(lines))
 
     def fill(self, engine: str, symbol: str, side: str, quantity: int, price: float, costs: float) -> None:
         self.send(

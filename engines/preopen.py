@@ -164,10 +164,12 @@ class PreopenEngine(Engine):
     # -- entries ----------------------------------------------------------
 
     def on_schedule(self, ctx: Context) -> list[Signal]:
-        """§6.5: at 09:15-09:20, enter on CONTINUATION only."""
+        """§6.5: at 09:15-09:20, enter on CONTINUATION only.
+
+        Always evaluated regardless of ``auto_trade`` -- see filings.py for
+        why; the one authoritative gate lives in Session.run_cycle.
+        """
         self._reset_if_new_day(ctx)
-        if not self.auto_trade:
-            return []
         if not self.within_window(ctx, "entry_window"):
             return []
 

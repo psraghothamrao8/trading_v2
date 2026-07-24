@@ -64,13 +64,22 @@ class SympathyEngine(Engine):
         return self._llm
 
     def universe(self) -> list[str]:
-        """§6.2 screens against NIFTY-500."""
+        """§6.2 screens against NIFTY-500.
+
+        Must use whichever source is actually configured (``datafeed.source``):
+        a bare ``DataFeed(journal=...)`` with no source defaults its cache
+        namespace to "kite", which -- with no authenticated Kite session -- can
+        silently read a stale or empty file instead of the real universe.
+        """
         try:
             return super().universe()
         except Exception:
             from core.datafeed import DataFeed
+            from core.sources import get_source
 
-            return DataFeed(journal=self.journal).resolve_nifty500()
+            source_name = str(self.settings.get("datafeed.source", "kite"))
+            feed = DataFeed(kite=get_source(source_name), journal=self.journal)
+            return feed.resolve_nifty500()
 
     # -- the trigger ------------------------------------------------------
 
@@ -162,9 +171,11 @@ class SympathyEngine(Engine):
         primary_move: float,
         ctx: Context,
     ) -> Optional[Signal]:
-        """§6.2 gate: liquid, confidence >= 0.7, move < 1/3 of the primary's."""
-        if not self.auto_trade:
-            return None
+        """§6.2 gate: liquid, confidence >= 0.7, move < 1/3 of the primary's.
+
+        Always evaluated regardless of ``auto_trade`` -- see filings.py for
+        why; the one authoritative gate lives in Session.run_cycle.
+        """
         if candidate.symbol in self._traded_today:
             return None
 
