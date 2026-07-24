@@ -294,6 +294,46 @@ class TestRunCycle:
 # ===========================================================================
 
 
+class TestOvernightCheckRespectsAutoTrade:
+    """job_overnight_check() calls on_schedule() directly, bypassing
+    run_cycle()'s entry loop -- it must repeat that loop's auto_trade check
+    itself or an unpromoted overnight engine would place real paper orders
+    every night it happens to pass its filters."""
+
+    def _rising_bars(self, n=260, end=_dt.date(2026, 7, 22)):
+        closes = [100.0 + i * 0.2 for i in range(n)]
+        index = pd.date_range(end - _dt.timedelta(days=n - 1), periods=n, freq="D", tz=IST)
+        return pd.DataFrame(
+            {"open": closes, "high": [c + 1 for c in closes], "low": [c - 1 for c in closes],
+             "close": closes, "volume": [100_000.0] * n},
+            index=index,
+        )
+
+    def test_unpromoted_overnight_never_routes_from_the_dedicated_job(
+        self, journal, frozen_clock
+    ):
+        from engines.overnight import OvernightEngine
+
+        frozen_clock(2026, 7, 22, 15, 20)
+        engine = OvernightEngine(journal=journal)
+        assert engine.auto_trade is False, "must be the shipped default for this test"
+        session = make_session(journal, {"overnight": engine}, {"NIFTYBEES": 152.0})
+        session.update_bars({("NIFTYBEES", "day"): self._rising_bars()})
+        assert session.job_overnight_check() == 0
+        assert session.broker.positions() == []
+
+    def test_promoted_overnight_does_route(self, journal, frozen_clock):
+        from engines.overnight import OvernightEngine
+
+        frozen_clock(2026, 7, 22, 15, 20)
+        engine = OvernightEngine(journal=journal)
+        engine.config._data["auto_trade"] = True     # type: ignore[attr-defined]
+        session = make_session(journal, {"overnight": engine}, {"NIFTYBEES": 152.0})
+        session.update_bars({("NIFTYBEES", "day"): self._rising_bars()})
+        assert session.job_overnight_check() == 1
+        assert len(session.broker.positions()) == 1
+
+
 class TestScheduledJobs:
     def test_every_spec_job_is_scheduled(self, journal, frozen_clock):
         """§7 names the job set explicitly."""

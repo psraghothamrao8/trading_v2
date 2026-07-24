@@ -465,9 +465,17 @@ class Session:
         return flattened
 
     def job_overnight_check(self) -> int:
-        """15:20 — §6.4's entry window."""
+        """15:20 — §6.4's entry window.
+
+        Calls ``engine.on_schedule`` directly rather than going through
+        ``run_cycle``'s entry loop, so it must repeat that loop's
+        ``auto_trade`` check itself -- engines no longer self-gate on it (see
+        run_cycle's docstring), and skipping this check here would let an
+        unpromoted overnight engine silently place real paper orders every
+        night it happens to pass its filters.
+        """
         engine = self.engines.get("overnight")
-        if engine is None or not engine.enabled:
+        if engine is None or not engine.enabled or not engine.auto_trade:
             return 0
         if self.state.decision and not self.state.decision.may_open("overnight"):
             log.info("overnight: not enabled in the %s regime", self.state.regime.value)
